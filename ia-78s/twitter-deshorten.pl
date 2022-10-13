@@ -12,6 +12,10 @@ open (my $OUT, '>', 'links.csv') or die $!;
 select $OUT;
 $| = 1;
 
+# TODO:
+# Output number of items to process
+# Do a progress bar thing (find a fancy module for it)
+
 while (<DATA>) {
 	$mech->get($_);
 
@@ -27,6 +31,3 @@ while (<DATA>) {
 }
 
 __DATA__
-https://t.co/B8fpHEV7b2
-https://t.co/uGkZ7XpSDZ
-https://t.co/0URYUZvSAp
