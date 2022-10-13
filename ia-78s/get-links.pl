@@ -18,12 +18,15 @@ use constant TRUE => 1;
 my $mech = WWW::Mechanize->new();
 $mech->agent('Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/69.0.3497.105 Mobile/15E148 Safari/605.1');
 
+# TODO: Better file name
 open (my $OUT, '>', 'other_sides.csv') or die $!;
 $| = 1;
 
 # TODO:
 # Output number of items to process
 # Do a progress bar thing (find a fancy module for it)
+# Actually get the audio file
+# Write the year into it (Audio::Metadata looks promising)
 
 my $parser = HTML5::DOM->new;
 
@@ -39,6 +42,8 @@ sub get_html ($url) {
 
 sub fetch ($url, $get_other_side = 0) {
 	print "$url\n";
+
+	# TODO: Die if it's not an IA URL
 
 	my $html = get_html($url);
 	my $tree = $parser->parse($html);
@@ -85,6 +90,9 @@ while (<DATA>) {
 
 	sleep 2;
 }
+
+# Example tweet format:
+# the music goes round & round (1956) - paul gayton https://t.co/cFzMh3sVAt https://t.co/ignorethislink
 
 __DATA__
 https://t.co/cFzMh3sVAt
