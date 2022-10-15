@@ -18,13 +18,10 @@ use constant TRUE => 1;
 my $mech = WWW::Mechanize->new();
 $mech->agent('Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/69.0.3497.105 Mobile/15E148 Safari/605.1');
 
-# TODO: Better file name
-open (my $OUT, '>', 'other_sides.csv') or die $!;
+open (my $OUT, '>', '78_downloads_list.csv') or die $!;
 $| = 1;
 
 # TODO:
-# Output number of items to process
-# Do a progress bar thing (find a fancy module for it)
 # Actually get the audio file
 # Write the year into it (Audio::Metadata looks promising)
 
@@ -40,25 +37,31 @@ sub get_html ($url) {
 	}
 }
 
-sub fetch ($url, $get_other_side = 0) {
-	print "$url\n";
+sub fetch_side_a($url) {
+	fetch($url, 'A', TRUE);
+}
 
-	# TODO: Die if it's not an IA URL
+sub fetch_side_b($url) {
+	fetch($url, 'B')
+}
+
+sub fetch ($url, $side, $get_other_side = 0) {
+	die "Not an IA URL: $url" if $url !~ m{https://archive.org/};
 
 	my $html = get_html($url);
 	my $tree = $parser->parse($html);
 
 	my $download = 'https://archive.org' . $tree->querySelector('#quickdown1 > .format-file a')->attr('href');
-	my ($file) = $download =~ m{.*/(.*?)$};
+	my ($track_title) = uri_unescape($download) =~ m{.*/(.*?)\.flac$};
 
-	print uri_unescape($file) . "\n\n";
+	print "$side. $track_title\n";
 	print $OUT "$url\t$download\n";
 
 	if ($get_other_side) {
 		my $other_side_found = $tree->querySelector('p.content')->nextSibling->querySelector('a')->attr('href');
 
 		if ($other_side_found) {
-			fetch('https://archive.org' . $other_side_found);
+			fetch_side_b('https://archive.org' . $other_side_found);
 		}
 	}
 
@@ -68,7 +71,6 @@ sub deshorten ($url) {
 	$mech->get($url);
 
 	if ($mech->success) {
-		print "$url --->\n";
 	 	my ($target) = $mech->response->decoded_content =~ /content="0;URL=(.*?)"/;
 
 	 	return $target;
@@ -77,16 +79,22 @@ sub deshorten ($url) {
 	}
 }
 
-while (<DATA>) {
-	chomp;
+chomp(my @input = <DATA>);
 
-	my $url = $_;
+print $#input + 1 . " discs to process.\n";
 
-	if ($url =~ /t\.co/) {
-		$url = deshorten($url);
-	}
+my $count = 0;
 
-	fetch($url, TRUE);
+foreach my $item (@input) {
+	$count++;
+
+	print "\n[$count]\n";
+
+	my $url = $item;
+
+	$url = deshorten($url) if ($url =~ /t\.co/);
+
+	fetch_side_a($url);
 
 	sleep 2;
 }
