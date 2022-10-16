@@ -1,0 +1,8 @@
+requires 'Getopt::Long';
+requires 'HTML5::DOM';
+requires 'Progress::Any';
+requires 'Progress::Any::Output';
+requires 'Progress::Any::Output::TermProgressBarColor';
+requires 'URI::Escape';
+requires 'WWW::Mechanize';
+	
