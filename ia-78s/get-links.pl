@@ -24,13 +24,13 @@ use WWW::Mechanize;
 # Actually get the audio file
 # Write the year into it (Audio::Metadata looks promising)
 
-my $OUTPUT_FILE = '78_downloads_list.csv';
+my $app = {
+	'output_file' => '78_downloads_list.csv'
+};
 
 GetOptions(
-	"outputfile=s" => \$OUTPUT_FILE
+	"outputfile=s" => \$app->{'output_file'}
 ) or die("Error in command line arguments\n");
-
-my $app = {};
 
 sub fetch (%options) {
 	my $mech = $app->{'mech'};
@@ -44,19 +44,18 @@ sub fetch (%options) {
 		. " side $side "
 	);
 
-	my $html = get_html($url);
-	my $tree = HTML5::DOM->new->parse($html);
+	my $dom = get_dom($url);
 
-	my $download = 'https://archive.org' . $tree->querySelector('#quickdown1 > .format-file a')->attr('href');
+	my $download = 'https://archive.org' . $dom->querySelector('#quickdown1 > .format-file a')->attr('href');
 	my ($track_info) = uri_unescape($download) =~ m{.*/(.*?)\.flac$};
 	my ($title, $artist) = split(/ - /, $track_info);
 
-	open (my $OUT, '>>', $OUTPUT_FILE) or die $!;
+	open (my $OUT, '>>', $app->{'output_file'}) or die $!;
 	print $OUT "$url\t$artist\t$title\t$download\n";
 	close $OUT;
 
 	if ($side eq 'A') {
-		my $other_side_found = $tree->querySelector('p.content')->nextSibling->querySelector('a')->attr('href');
+		my $other_side_found = $dom->querySelector('p.content')->nextSibling->querySelector('a')->attr('href');
 
 		if ($other_side_found) {
 			$progress->target(++$app->{'target'});
@@ -67,6 +66,11 @@ sub fetch (%options) {
 			));
 		}
 	}
+}
+
+sub get_dom ($url) {
+	my $html = get_html($url);
+	return HTML5::DOM->new->parse($html);
 }
 
 sub get_html ($url) {
@@ -81,7 +85,7 @@ sub get_html ($url) {
 }
 
 sub write_csv_header {
-	open (my $OUT, '>', $OUTPUT_FILE) or die $!;
+	open (my $OUT, '>', $app->{'output_file'}) or die $!;
 	print $OUT "Track page URL\tArtist\tTitle\tDownload URL\n";
 	close $OUT;
 }
@@ -99,6 +103,25 @@ sub deshorten ($url) {
 	return $destination;
 }
 
+# TODO
+sub process_tweet ($url) {
+	my $dom = get_dom($url);
+	# $dom->querySelector('[data-testid="tweetText"]')
+}
+
+sub process_disc_list (@input) {
+	foreach my $disc (@input) {
+		$app->{'discs_processed'}++;
+
+		fetch((
+			url  => ($disc =~ /t\.co/) ? deshorten($disc) : $disc,
+			side => 'A'
+		));
+
+		sleep 2;
+	}
+}
+
 sub main {
 	my $mech = WWW::Mechanize->new();
 	$mech->agent('Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/69.0.3497.105 Mobile/15E148 Safari/605.1');	
@@ -114,16 +137,7 @@ sub main {
 
 	$progress->target($app->{'target'});
 
-	foreach my $disc (@input) {
-		$app->{'discs_processed'}++;
-
-		fetch((
-			url   => ($disc =~ /t\.co/) ? deshorten($disc) : $disc,
-			side  => 'A'
-		));
-
-		sleep 2;
-	}
+	process_disc_list(@input);
 
 	$progress->finish(message => 'Done.');
 }
