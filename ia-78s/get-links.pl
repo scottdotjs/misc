@@ -9,20 +9,21 @@ use open qw(:std :utf8);
 use feature 'signatures';
 no warnings 'experimental::signatures';
 
+use lib 'lib';
+
 use Getopt::Long;
-use HTML5::DOM;
 use Progress::Any '$progress';
 use Progress::Any::Output 'TermProgressBarColor';
-use URI::Escape;
-use WWW::Mechanize;
+
+use IA78s::Fetch qw(get_track_metadata);
+use IA78s::Output qw(write_csv_header write_track_details);
 
 # TODO:
 # Command line options:
 # - tweet URL
-# - tweets list
-# - IA disc URLs list
+# - input file
 # Actually get the audio file
-# Write the year into it (Audio::Metadata looks promising)
+# Write the year into it (Music::Tag looks promising)
 
 my $app = {
 	'output_file' => '78_downloads_list.csv'
@@ -32,75 +33,30 @@ GetOptions(
 	"outputfile=s" => \$app->{'output_file'}
 ) or die("Error in command line arguments\n");
 
-sub fetch (%options) {
-	my $mech = $app->{'mech'};
-	my $url  = $options{'url'  };
-	my $side = $options{'side' };
+sub process_disc ($options) {
+	my $url  = $options->{'url' };
+	my $side = $options->{'side'};
 
-	die "Not an IA URL: $url" if $url !~ m{https://archive.org/};
-
+	$app->{'discs_processed'}++;
 	$progress->update(message => 
-		'Processing disc ' . $app->{'discs_processed'} . '/' . $app->{'total_discs'}
-		. " side $side "
+		qq(Processing disc $app->{'discs_processed'}/$app->{'total_discs'} side $side )
 	);
 
-	my $dom = get_dom($url);
+	my $track = get_track_metadata($url, $side);
 
-	my $download = 'https://archive.org' . $dom->querySelector('#quickdown1 > .format-file a')->attr('href');
-	my ($track_info) = uri_unescape($download) =~ m{.*/(.*?)\.flac$};
-	my ($title, $artist) = split(/ - /, $track_info);
+	write_track_details(
+		$app->{'output_file'},
+		$track
+	);
 
-	open (my $OUT, '>>', $app->{'output_file'}) or die $!;
-	print $OUT "$url\t$artist\t$title\t$download\n";
-	close $OUT;
+	if ($track->{'other_side'}) {
+		$progress->target(++$app->{'progress'});
 
-	if ($side eq 'A') {
-		my $other_side_found = $dom->querySelector('p.content')->nextSibling->querySelector('a')->attr('href');
-
-		if ($other_side_found) {
-			$progress->target(++$app->{'target'});
-
-			fetch((
-				url   => 'https://archive.org' . $other_side_found,
-				side  => 'B'
-			));
-		}
+		process_disc({
+			url  => $track->{'other_side'},
+			side => 'B'
+		});
 	}
-}
-
-sub get_dom ($url) {
-	my $html = get_html($url);
-	return HTML5::DOM->new->parse($html);
-}
-
-sub get_html ($url) {
-	my $mech = $app->{'mech'};
-	$mech->get($url);
-
-	if (!$mech->success) {
-		die $mech->response->status_line;
-	}
-
-	return $mech->response->decoded_content;
-}
-
-sub write_csv_header {
-	open (my $OUT, '>', $app->{'output_file'}) or die $!;
-	print $OUT "Track page URL\tArtist\tTitle\tDownload URL\n";
-	close $OUT;
-}
-
-sub deshorten ($url) {
-	my $mech = $app->{'mech'};
-	$mech->get($url);
-
-	if (!$mech->success) {
-		die $mech->response->status_line;
-	}
-	 
-	my ($destination) = $mech->response->decoded_content =~ /content="0;URL=(.*?)"/;
-
-	return $destination;
 }
 
 # TODO
@@ -109,44 +65,54 @@ sub process_tweet ($url) {
 	# $dom->querySelector('[data-testid="tweetText"]')
 }
 
-sub process_disc_list (@input) {
-	foreach my $disc (@input) {
-		$app->{'discs_processed'}++;
+sub process_tweet_text ($text) {
+	# title (year) - artist https://t.co/abcdef 
+	my ($year, $link) = $text =~ m{(.*?) \((\d{4})\) .*? (https://t\.co/.*?) };
 
-		fetch((
-			url  => ($disc =~ /t\.co/) ? deshorten($disc) : $disc,
-			side => 'A'
-		));
+	if ($year && $link) {
+		# TODO
+	}
+}
+
+sub process_list (@input) {
+	foreach my $item (@input) {
+		if ($item =~ m{^https://twitter.com/78_sampler/status/\d+$}) {
+			process_tweet($item);
+		} elsif ($item =~ m{^https://archive.org/details/[\w-]+$}) {
+			process_disc({
+				'url'  => $item,
+				'side' => 'A'
+			});
+		} elsif ($item =~ m{^https://t\.co/[A-Za-z0-9]+$}) {
+			# TODO: deshorten and fetch $item
+			# TODO: merge deshortening into fetch
+		} else {
+			process_tweet_text($item);
+		}
 
 		sleep 2;
 	}
 }
 
 sub main {
-	my $mech = WWW::Mechanize->new();
-	$mech->agent('Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/69.0.3497.105 Mobile/15E148 Safari/605.1');	
-	$app->{'mech'} = $mech;
-
-	write_csv_header();
+	write_csv_header($app->{'output_file'});
 
 	chomp(my @input = <DATA>);
 
 	$app->{'total_discs'    } = $#input + 1;
-	$app->{'target'         } = $app->{'total_discs'};
+	$app->{'progress'       } = $app->{'total_discs'};
 	$app->{'discs_processed'} = 0;
 
-	$progress->target($app->{'target'});
+	$progress->target($app->{'progress'});
 
-	process_disc_list(@input);
+	process_list(@input);
 
 	$progress->finish(message => 'Done.');
 }
 
 main();
 
-# Example tweet format:
-# the music goes round & round (1956) - paul gayton https://t.co/cFzMh3sVAt https://t.co/ignorethislink
-
 __DATA__
 https://t.co/cFzMh3sVAt
 https://archive.org/details/78_stumblin_the-s-m-o-o-t-h-music-of-larry-fotine-cathy-cordovan-zez-confrey_gbia0409848a
+the music goes round & round (1956) - paul gayton https://t.co/cFzMh3sVAt https://t.co/ignorethislink
