@@ -11,7 +11,7 @@ no warnings 'experimental::signatures';
 
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT_OK = qw(get_track_metadata);
+our @EXPORT_OK = qw(fetch get_dom get_track_metadata);
 
 use HTML5::DOM;
 use URI::Escape;
@@ -28,27 +28,28 @@ sub fetch ($url) {
 	return $mech->response->decoded_content;
 }
 
-sub deshorten ($url) {
-	my $content = fetch($url);
-	 
-	my ($destination) = $content =~ /content="0;URL=(.*?)"/;
-
-	return $destination;
-}
-
-sub get_dom ($url) {
-	return HTML5::DOM->new->parse(fetch($url));
+sub get_dom ($html) {
+	return HTML5::DOM->new->parse($html);
 }
 
 sub get_track_metadata ($url, $side) {
-	my $dom = get_dom($url);
+	my $fetch_url;
+
+	if ($url =~ m{^https://t\.co/[A-Za-z0-9]+$}) {
+		$mech->get($url);
+		($fetch_url) = $mech->response->decoded_content =~ /content="0;URL=(.*?)"/;
+	} else {
+		$fetch_url = $url;
+	}
+
+	my $dom = get_dom(fetch($fetch_url));
 
 	my $download = 'https://archive.org' . $dom->querySelector('#quickdown1 > .format-file a')->attr('href');
 	my ($flac_file) = uri_unescape($download) =~ m{.*/(.*?)\.flac$};
 	my ($title, $artist) = split(/ - /, $flac_file);
 
 	my $track = {
-		'url'     => $url, 
+		'url'     => $fetch_url, 
 		'artist'  => $artist,
 		'title'   => $title,
 		'download' => $download
@@ -69,3 +70,5 @@ sub get_track_metadata ($url, $side) {
 
 	return $track;
 }
+
+return 1;

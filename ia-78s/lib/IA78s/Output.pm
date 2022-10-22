@@ -28,5 +28,9 @@ sub write_track_details ($output_file, $track) {
 		print $OUT "$track->{$_}\t" if $track->{$_};
 	}
 
+	print $OUT "\n";
+
 	close $OUT;
 }
+
+return 1;

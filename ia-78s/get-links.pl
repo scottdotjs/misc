@@ -12,11 +12,11 @@ no warnings 'experimental::signatures';
 use lib 'lib';
 
 use Getopt::Long;
-use Progress::Any '$progress';
+use Progress::Any;
 use Progress::Any::Output 'TermProgressBarColor';
 
-use IA78s::Fetch qw(get_track_metadata);
-use IA78s::Output qw(write_csv_header write_track_details);
+use IA78s::Output qw(write_csv_header);
+use IA78s::Process qw(process_list);
 
 # TODO:
 # Command line options:
@@ -33,81 +33,24 @@ GetOptions(
 	"outputfile=s" => \$app->{'output_file'}
 ) or die("Error in command line arguments\n");
 
-sub process_disc ($options) {
-	my $url  = $options->{'url' };
-	my $side = $options->{'side'};
-
-	$app->{'discs_processed'}++;
-	$progress->update(message => 
-		qq(Processing disc $app->{'discs_processed'}/$app->{'total_discs'} side $side )
-	);
-
-	my $track = get_track_metadata($url, $side);
-
-	write_track_details(
-		$app->{'output_file'},
-		$track
-	);
-
-	if ($track->{'other_side'}) {
-		$progress->target(++$app->{'progress'});
-
-		process_disc({
-			url  => $track->{'other_side'},
-			side => 'B'
-		});
-	}
-}
-
-# TODO
-sub process_tweet ($url) {
-	my $dom = get_dom($url);
-	# $dom->querySelector('[data-testid="tweetText"]')
-}
-
-sub process_tweet_text ($text) {
-	# title (year) - artist https://t.co/abcdef 
-	my ($year, $link) = $text =~ m{(.*?) \((\d{4})\) .*? (https://t\.co/.*?) };
-
-	if ($year && $link) {
-		# TODO
-	}
-}
-
-sub process_list (@input) {
-	foreach my $item (@input) {
-		if ($item =~ m{^https://twitter.com/78_sampler/status/\d+$}) {
-			process_tweet($item);
-		} elsif ($item =~ m{^https://archive.org/details/[\w-]+$}) {
-			process_disc({
-				'url'  => $item,
-				'side' => 'A'
-			});
-		} elsif ($item =~ m{^https://t\.co/[A-Za-z0-9]+$}) {
-			# TODO: deshorten and fetch $item
-			# TODO: merge deshortening into fetch
-		} else {
-			process_tweet_text($item);
-		}
-
-		sleep 2;
-	}
-}
-
 sub main {
 	write_csv_header($app->{'output_file'});
 
 	chomp(my @input = <DATA>);
 
+	$app->{'progress'       } = Progress::Any->get_indicator(task => 'dl');
 	$app->{'total_discs'    } = $#input + 1;
-	$app->{'progress'       } = $app->{'total_discs'};
+	$app->{'target'         } = $app->{'total_discs'};
 	$app->{'discs_processed'} = 0;
 
-	$progress->target($app->{'progress'});
+	$app->{'progress'}->target($app->{'target'});
 
-	process_list(@input);
+	process_list(
+		app   => $app,
+		input => \@input
+	);
 
-	$progress->finish(message => 'Done.');
+	$app->{'progress'}->finish(message => 'Done.');
 }
 
 main();
